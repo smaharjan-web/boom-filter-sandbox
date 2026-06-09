@@ -724,11 +724,6 @@ async fn build_test_filter_pipeline(
                 "end_jd cannot be less than or equal to start_jd".to_string(),
             ));
         }
-        if end_jd - start_jd > 7.0 {
-            return Err(FilterError::InvalidFilterPipeline(
-                "JD window for filter test cannot exceed 7.0 JD".to_string(),
-            ));
-        }
         match_stage.insert("candidate.jd", doc! { "$gte": start_jd, "$lte": end_jd });
     }
 
