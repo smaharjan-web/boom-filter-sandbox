@@ -724,6 +724,7 @@ async fn build_test_filter_pipeline(
                 "end_jd cannot be less than or equal to start_jd".to_string(),
             ));
         }
+
         match_stage.insert("candidate.jd", doc! { "$gte": start_jd, "$lte": end_jd });
     }
 
