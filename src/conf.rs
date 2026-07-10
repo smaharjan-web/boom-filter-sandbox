@@ -505,12 +505,23 @@ fn default_api_port() -> u16 {
     4000
 }
 
+fn default_groq_model() -> String {
+    "llama-3.3-70b-versatile".to_string()
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct ApiConfig {
     pub domain: String,
     pub auth: AuthConfig,
     #[serde(default = "default_api_port")]
     pub port: u16,
+    /// Default Groq API key for natural-language (LLM) filter generation.
+    /// Set via BOOM_API__GROQ_API_KEY. Leave empty to disable the endpoint.
+    #[serde(default)]
+    pub groq_api_key: Option<String>,
+    /// Groq model used for natural-language filter generation.
+    #[serde(default = "default_groq_model")]
+    pub groq_model: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]

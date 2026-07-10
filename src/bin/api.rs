@@ -85,6 +85,9 @@ async fn main() -> std::io::Result<()> {
                     .service(routes::babamul::post_babamul_reset_password)
                     // Protected routes
                     .service(routes::babamul::get_babamul_profile)
+                    .service(routes::babamul::groq::put_groq_key)
+                    .service(routes::babamul::groq::delete_groq_key)
+                    .service(routes::babamul::groq::get_groq_key_status)
                     .service(routes::babamul::post_kafka_credentials)
                     .service(routes::babamul::get_kafka_credentials)
                     .service(routes::babamul::delete_kafka_credential)
@@ -123,6 +126,7 @@ async fn main() -> std::io::Result<()> {
                 .service(routes::filters::post_filter_version)
                 .service(routes::filters::post_filter_test)
                 .service(routes::filters::post_filter_test_count)
+                .service(routes::llm::post_generate_filter)
                 .service(routes::filters::get_filter_schema)
                 .service(routes::users::post_user)
                 .service(routes::users::get_users)

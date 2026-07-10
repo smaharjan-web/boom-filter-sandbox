@@ -1,3 +1,4 @@
+pub mod groq;
 pub mod stats;
 pub mod surveys;
 pub mod tokens;
@@ -73,7 +74,7 @@ fn validate_password_complexity(password: &str) -> Result<(), &'static str> {
 }
 
 // Generate a random nonce for each encryption
-fn encrypt_password(
+pub(crate) fn encrypt_password(
     password: &str,
     secret_key: &[u8; 32],
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -93,7 +94,7 @@ fn encrypt_password(
     Ok(general_purpose::STANDARD.encode(combined))
 }
 
-fn decrypt_password(
+pub(crate) fn decrypt_password(
     encrypted: &str,
     secret_key: &[u8; 32],
 ) -> Result<String, Box<dyn std::error::Error>> {

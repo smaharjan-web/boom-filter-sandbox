@@ -68,6 +68,7 @@ impl Modify for BabamulSecurityAddon {
         routes::filters::post_filter_test,
         routes::filters::post_filter_test_count,
         routes::filters::get_filter_schema,
+        routes::llm::post_generate_filter,
         routes::queries::count::post_count_query,
         routes::queries::count::post_estimated_count_query,
         routes::queries::find::post_find_query,
@@ -110,6 +111,9 @@ pub struct ApiDoc;
         routes::babamul::stats::collections::get_collection_stats,
         routes::babamul::stats::kafka::get_kafka_stats,
         routes::babamul::stats::nightly::get_nightly_stats,
+        routes::babamul::groq::put_groq_key,
+        routes::babamul::groq::delete_groq_key,
+        routes::babamul::groq::get_groq_key_status,
     ),
     security(
         ("babamul_jwt_token" = [])

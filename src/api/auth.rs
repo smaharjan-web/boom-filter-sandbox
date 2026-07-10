@@ -189,6 +189,7 @@ pub const PUBLIC_ROUTES: &[&str] = &[
     "/",
     "/filters/test",
     "/filters/test/count",
+    "/filters/generate",
 ];
 
 pub async fn auth_middleware(
@@ -408,4 +409,42 @@ pub async fn babamul_auth_middleware(
         }
     }
     next.call(req).await
+}
+
+/// Best-effort resolve a Babamul user from a raw bearer token, for endpoints
+/// that allow anonymous guests but want to identify the caller when they *are*
+/// logged in. Returns `None` on any failure (missing/invalid/expired token,
+/// non-babamul token, unknown or inactive user) so the caller can fall back to
+/// guest behaviour instead of rejecting the request.
+pub(crate) async fn babamul_user_from_token(
+    token: &str,
+    auth: &AuthProvider,
+    db: &Database,
+) -> Option<BabamulUser> {
+    let collection: mongodb::Collection<BabamulUser> = db.collection("babamul_users");
+
+    let user = if token.starts_with("bbml_") {
+        // Personal access token: "bbml_" (5) + 36-char secret = 41 chars.
+        if token.len() != 41 {
+            return None;
+        }
+        let token_hash = hash_token(&token[5..]);
+        collection
+            .find_one(doc! { "tokens.token_hash": &token_hash })
+            .await
+            .ok()??
+    } else {
+        // JWT: validate and require the babamul subject prefix.
+        let user_id = auth.validate_token(token).await.ok()?;
+        let actual_user_id = user_id.strip_prefix("babamul:")?;
+        collection
+            .find_one(doc! { "_id": actual_user_id })
+            .await
+            .ok()??
+    };
+
+    if !user.is_activated {
+        return None;
+    }
+    Some(user)
 }
