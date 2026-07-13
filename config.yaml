@@ -10,8 +10,7 @@ database:
 api:
   domain: "localhost" # Set via BOOM_API__DOMAIN environment variable
   port: 4000 # Set via BOOM_API__PORT environment variable
-  groq_api_key: # Default Groq API key for natural-language filter generation. Set via BOOM_API__GROQ_API_KEY
-  groq_model: llama-3.3-70b-versatile # Groq model for natural-language filter generation
+  groq_model: llama-3.3-70b-versatile # Groq model for natural-language filter generation (the API key is read from MongoDB, not config)
   auth:
     secret_key: "" # Set via BOOM_API__AUTH__SECRET_KEY environment variable
     token_expiration: 604800 # JWT token expiration in seconds (7 days) -- must be > 0

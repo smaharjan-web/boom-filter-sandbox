@@ -187,6 +187,8 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       # Optional overrides (these have defaults in config.yaml)
       BOOM_API__PORT: ${BOOM_API__PORT:-4000}
+      # Groq model for natural-language filter generation (the API key is read from MongoDB, not env)
+      BOOM_API__GROQ_MODEL: ${BOOM_API__GROQ_MODEL:-llama-3.3-70b-versatile}
       BOOM_DATABASE__HOST: mongo
       BOOM_DATABASE__USERNAME: ${BOOM_DATABASE__USERNAME:-mongoadmin}
       BOOM_CUTOUTS_STORAGE__USERNAME: ${BOOM_DATABASE__USERNAME:-mongoadmin}

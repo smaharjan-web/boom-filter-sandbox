@@ -515,11 +515,9 @@ pub struct ApiConfig {
     pub auth: AuthConfig,
     #[serde(default = "default_api_port")]
     pub port: u16,
-    /// Default Groq API key for natural-language (LLM) filter generation.
-    /// Set via BOOM_API__GROQ_API_KEY. Leave empty to disable the endpoint.
-    #[serde(default)]
-    pub groq_api_key: Option<String>,
-    /// Groq model used for natural-language filter generation.
+    /// Groq model used for natural-language filter generation. The API key
+    /// itself is never configured here — it's read per-request from MongoDB
+    /// (a user's saved key, or the shared `__default__` document).
     #[serde(default = "default_groq_model")]
     pub groq_model: String,
 }

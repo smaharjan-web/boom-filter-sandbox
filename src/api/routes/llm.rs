@@ -3,16 +3,13 @@
 //! The visual filter builder used to call the Groq API directly from the browser
 //! with a key baked into the frontend bundle, which exposed the key to every
 //! visitor. This endpoint moves the call server-side: the system prompt is built
-//! here and the Groq key is read from the server config (`BOOM_API__GROQ_API_KEY`).
-//!
-//! Adapted from the boom `groq-api-backend-setup` branch. That branch's per-user
-//! saved-key management lives in the babamul module and is intentionally omitted
-//! here — this sandbox only needs the public filter-page generation route, keyed
-//! off the server's default Groq key.
+//! here and the Groq key is resolved per-request from MongoDB — a logged-in
+//! user's own saved key, or the shared `__default__` document
+//! (`babamul_groq_keys` collection). The key is never read from config or env.
 
 use crate::api::auth::{babamul_user_from_token, AuthProvider};
 use crate::api::models::response;
-use crate::api::routes::babamul::groq::get_user_groq_key;
+use crate::api::routes::babamul::groq::{get_default_groq_key, get_user_groq_key};
 use crate::conf::AppConfig;
 use crate::utils::enums::Survey;
 use actix_web::{post, web, HttpRequest, HttpResponse};
@@ -237,12 +234,13 @@ pub async fn post_generate_filter(
         return response::bad_request(&format!("query cannot exceed {} characters", MAX_QUERY_LEN));
     }
 
-    // Resolve which Groq key to use. A logged-in babamul user's own saved key
-    // takes precedence; guests (and users without a saved key) fall back to the
-    // server default. `used_default` drives the rate-limit messaging below.
+    // Resolve which Groq key to use, all from MongoDB. A logged-in babamul
+    // user's own saved key takes precedence; guests (and users without a saved
+    // key) fall back to the shared `__default__` key. `used_default` drives the
+    // rate-limit messaging below.
     //
-    // The DB/auth providers are pulled from the request extensions so the route
-    // stays usable in tests that wire only the config.
+    // The DB/auth providers are pulled from the request extensions, so a route
+    // wired without a Database simply finds no key and prompts the caller.
     let mut api_key: Option<String> = None;
     let mut used_default = true;
 
@@ -259,10 +257,12 @@ pub async fn post_generate_filter(
         }
     }
 
+    // Fall back to the shared default key stored in Mongo under the reserved
+    // `__default__` id (plaintext or encrypted).
     if api_key.is_none() {
-        if let Some(key) = &config.api.groq_api_key {
-            if !key.trim().is_empty() {
-                api_key = Some(key.clone());
+        if let Some(db) = req.app_data::<web::Data<Database>>() {
+            if let Some(key) = get_default_groq_key(db).await {
+                api_key = Some(key);
             }
         }
     }

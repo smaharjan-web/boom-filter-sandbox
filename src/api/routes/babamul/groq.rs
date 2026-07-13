@@ -19,6 +19,12 @@ use utoipa::ToSchema;
 
 const GROQ_KEYS_COLLECTION: &str = "babamul_groq_keys";
 
+/// Reserved document id for the **shared default** Groq key, stored in the same
+/// `babamul_groq_keys` collection but belonging to no user: real babamul ids are
+/// UUIDs, and the public `/profile/groq-key` route only ever writes under the
+/// caller's own id. This slot is set by hand in Mongo (a `plaintext_key` field).
+pub const DEFAULT_GROQ_KEY_ID: &str = "__default__";
+
 /// Look up and decrypt a babamul user's saved Groq API key, if any. Returns
 /// `None` when the user has no saved key or decryption fails.
 pub(crate) async fn get_user_groq_key(
@@ -30,6 +36,35 @@ pub(crate) async fn get_user_groq_key(
     let doc = collection.find_one(doc! { "_id": user_id }).await.ok()??;
     let encrypted = doc.get_str("key").ok()?;
     decrypt_password(encrypted, config.api.auth.get_hashed_secret_key()).ok()
+}
+
+/// Resolve the shared default Groq key from the `__default__` document.
+///
+/// The key is stored as a plaintext `plaintext_key` field (insert it by hand in
+/// Mongo; no server secret involved). Returns `None` if the document is missing
+/// or the field is empty.
+pub(crate) async fn get_default_groq_key(db: &Database) -> Option<String> {
+    let collection: Collection<Document> = db.collection(GROQ_KEYS_COLLECTION);
+    let doc = collection
+        .find_one(doc! { "_id": DEFAULT_GROQ_KEY_ID })
+        .await
+        .ok()??;
+
+    let plain = doc.get_str("plaintext_key").ok()?.trim();
+    if plain.is_empty() {
+        return None;
+    }
+    Some(plain.to_string())
+}
+
+/// Remove the shared default Groq API key. Used by the LLM route's tests to
+/// clear and seed the `__default__` document.
+pub async fn delete_default_groq_key(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
+    let collection: Collection<Document> = db.collection(GROQ_KEYS_COLLECTION);
+    collection
+        .delete_one(doc! { "_id": DEFAULT_GROQ_KEY_ID })
+        .await?;
+    Ok(())
 }
 
 #[derive(Deserialize, Clone, ToSchema)]

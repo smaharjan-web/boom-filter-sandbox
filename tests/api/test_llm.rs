@@ -1,7 +1,11 @@
 /// Tests for the natural-language filter generation route (`POST /filters/generate`).
 ///
-/// These drive the real handler in-process via actix's test service, so they
-/// need no database or Kafka. The validation and config-guard paths run offline;
+/// The Groq API key is no longer configured via env/config — it is read from
+/// MongoDB (the `babamul_groq_keys` collection: a user's saved key, or the
+/// shared `__default__` document). These tests therefore talk to the Dockerized
+/// test database via `get_test_db_api()`, matching the babamul test suite.
+///
+/// The query-validation path runs offline; the key-resolution paths hit Mongo;
 /// the live Groq call is exercised only by the `#[ignore]`d test, which requires
 /// a real key in the `GROQ_API_KEY` environment variable.
 #[cfg(test)]
@@ -9,26 +13,35 @@ mod tests {
     use actix_web::http::StatusCode;
     use actix_web::{test, web, App};
     use boom::api::auth::PUBLIC_ROUTES;
+    use boom::api::db::get_test_db_api;
     use boom::api::routes;
+    use boom::api::routes::babamul::groq::{delete_default_groq_key, DEFAULT_GROQ_KEY_ID};
     use boom::api::test_utils::read_json_response;
     use boom::conf::AppConfig;
+    use mongodb::{bson::doc, bson::Document, Collection, Database};
     use serde_json::json;
 
-    /// Load the test config with the given Groq key wired in. Each test builds
-    /// its own app inline from this (the actix service type is awkward to name).
-    fn config_with_key(groq_api_key: Option<String>) -> AppConfig {
-        let mut config = AppConfig::from_test_config().expect("Failed to load test config");
-        config.api.groq_api_key = groq_api_key;
-        config
+    /// Store a plaintext shared default key in Mongo (mirrors a hand-inserted
+    /// `__default__` document).
+    async fn set_plaintext_default(db: &Database, key: &str) {
+        let collection: Collection<Document> = db.collection("babamul_groq_keys");
+        collection
+            .update_one(
+                doc! { "_id": DEFAULT_GROQ_KEY_ID },
+                doc! { "$set": { "plaintext_key": key } },
+            )
+            .upsert(true)
+            .await
+            .expect("failed to seed default groq key");
     }
 
     #[actix_web::test]
     async fn empty_query_is_rejected() {
+        // Query validation happens before any key lookup, so no DB is needed.
+        let config = AppConfig::from_test_config().expect("Failed to load test config");
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(config_with_key(Some(
-                    "gsk_dummy".to_string(),
-                ))))
+                .app_data(web::Data::new(config))
                 .service(routes::llm::post_generate_filter),
         )
         .await;
@@ -49,10 +62,19 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn missing_groq_key_is_rejected() {
+    async fn missing_default_key_is_rejected() {
+        // With no user key and no `__default__` document in Mongo, a guest is
+        // prompted to supply their own key (machine-readable flag for the UI).
+        let config = AppConfig::from_test_config().expect("Failed to load test config");
+        let db = get_test_db_api().await;
+        delete_default_groq_key(&db)
+            .await
+            .expect("failed to clear default key");
+
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(config_with_key(None)))
+                .app_data(web::Data::new(config))
+                .app_data(web::Data::new(db))
                 .service(routes::llm::post_generate_filter),
         )
         .await;
@@ -63,29 +85,11 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
         let body = read_json_response(resp).await;
-        // With no key configured and no logged-in user, the guest is prompted to
-        // supply their own key (machine-readable flag for the frontend).
         assert!(
             body["message"].as_str().unwrap().contains("Groq API key"),
             "unexpected body: {body}"
         );
         assert_eq!(body["data"]["requires_api_key"], serde_json::json!(true));
-    }
-
-    #[actix_web::test]
-    async fn blank_key_is_treated_as_unconfigured() {
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(config_with_key(Some("   ".to_string()))))
-                .service(routes::llm::post_generate_filter),
-        )
-        .await;
-        let req = test::TestRequest::post()
-            .uri("/filters/generate")
-            .set_json(json!({ "query": "bright real transients", "survey": "LSST" }))
-            .to_request();
-        let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[actix_web::test]
@@ -95,17 +99,23 @@ mod tests {
         assert!(PUBLIC_ROUTES.contains(&"/filters/generate"));
     }
 
-    /// Live end-to-end call against the real Groq API. Ignored by default; run
-    /// with a real key via:
+    /// Live end-to-end call against the real Groq API, with the key resolved
+    /// from the Mongo `__default__` document (the production path). Ignored by
+    /// default; run with a real key via:
     ///   GROQ_API_KEY=gsk_... cargo test --test test_api -- --ignored live_generation
     #[actix_web::test]
     #[ignore]
-    async fn live_generation_returns_filter_tree() {
+    async fn live_generation_uses_mongo_default() {
         let key = std::env::var("GROQ_API_KEY")
             .expect("set GROQ_API_KEY to run the live generation test");
+        let config = AppConfig::from_test_config().expect("Failed to load test config");
+        let db = get_test_db_api().await;
+        set_plaintext_default(&db, &key).await;
+
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(config_with_key(Some(key))))
+                .app_data(web::Data::new(config))
+                .app_data(web::Data::new(db.clone()))
                 .service(routes::llm::post_generate_filter),
         )
         .await;
@@ -117,8 +127,13 @@ mod tests {
             }))
             .to_request();
         let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::OK, "expected 200 from Groq");
+        let status = resp.status();
         let body = read_json_response(resp).await;
+
+        // Clean up the seeded key regardless of the assertion outcome.
+        let _ = delete_default_groq_key(&db).await;
+
+        assert_eq!(status, StatusCode::OK, "expected 200 from Groq: {body}");
         let filters = &body["data"]["filters"];
         assert!(filters.is_array(), "filters should be an array: {body}");
         let first = &filters[0];
