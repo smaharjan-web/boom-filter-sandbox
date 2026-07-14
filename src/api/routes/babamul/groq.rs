@@ -1,13 +1,9 @@
 //! Per-user Groq API key storage for natural-language filter generation.
 //!
 //! Keys are stored **encrypted** (AES-256-GCM, using the server secret) in a
-//! dedicated `babamul_groq_keys` collection keyed by babamul user id — kept out
-//! of the main user document so the `BabamulUser` shape (and its many
-//! initializers) is untouched.
-//!
-//! The public `/filters/generate` route resolves a logged-in caller's saved key
-//! here via [`get_user_groq_key`], falling back to the server default key for
-//! guests or users who haven't saved one.
+//! dedicated `babamul_groq_keys` collection keyed by babamul user id ,
+//! falling back to the server default key for
+//! guests or users who haven't saved a key.
 
 use super::{decrypt_password, encrypt_password, BabamulUser};
 use crate::api::models::response;
@@ -19,14 +15,9 @@ use utoipa::ToSchema;
 
 const GROQ_KEYS_COLLECTION: &str = "babamul_groq_keys";
 
-/// Reserved document id for the **shared default** Groq key, stored in the same
-/// `babamul_groq_keys` collection but belonging to no user: real babamul ids are
-/// UUIDs, and the public `/profile/groq-key` route only ever writes under the
-/// caller's own id. This slot is set by hand in Mongo (a `plaintext_key` field).
 pub const DEFAULT_GROQ_KEY_ID: &str = "__default__";
 
-/// Look up and decrypt a babamul user's saved Groq API key, if any. Returns
-/// `None` when the user has no saved key or decryption fails.
+/// Look up and decrypt a babamul user's saved Groq API key, if any
 pub(crate) async fn get_user_groq_key(
     db: &Database,
     config: &AppConfig,
@@ -38,10 +29,7 @@ pub(crate) async fn get_user_groq_key(
     decrypt_password(encrypted, config.api.auth.get_hashed_secret_key()).ok()
 }
 
-/// Resolve the shared default Groq key from the `__default__` document.
-///
-/// The key is stored as a plaintext `plaintext_key` field (insert it by hand in
-/// Mongo; no server secret involved). Returns `None` if the document is missing
+/// Resolve the shared default Groq key if stored in MongoDB. Returns `None` if the document is missing
 /// or the field is empty.
 pub(crate) async fn get_default_groq_key(db: &Database) -> Option<String> {
     let collection: Collection<Document> = db.collection(GROQ_KEYS_COLLECTION);

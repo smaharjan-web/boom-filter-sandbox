@@ -1,6 +1,6 @@
 /// Tests for the natural-language filter generation route (`POST /filters/generate`).
 ///
-/// The Groq API key is no longer configured via env/config — it is read from
+/// The Groq API key is read from
 /// MongoDB (the `babamul_groq_keys` collection: a user's saved key, or the
 /// shared `__default__` document). These tests therefore talk to the Dockerized
 /// test database via `get_test_db_api()`, matching the babamul test suite.
