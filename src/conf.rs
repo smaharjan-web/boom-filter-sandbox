@@ -515,9 +515,6 @@ pub struct ApiConfig {
     pub auth: AuthConfig,
     #[serde(default = "default_api_port")]
     pub port: u16,
-    /// Groq model used for natural-language filter generation. The API key
-    /// itself is never configured here — it's read per-request from MongoDB
-    /// (a user's saved key, or the shared `__default__` document).
     #[serde(default = "default_groq_model")]
     pub groq_model: String,
 }
