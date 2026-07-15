@@ -1,11 +1,4 @@
-//! Natural-language → filter-tree generation backed by Groq.
-//!
-//! The visual filter builder used to call the Groq API directly from the browser
-//! with a key baked into the frontend bundle, which exposed the key to every
-//! visitor. This endpoint moves the call server-side: the system prompt is built
-//! here and the Groq key is resolved per-request from MongoDB — a logged-in
-//! user's own saved key, or the shared `__default__` document
-//! (`babamul_groq_keys` collection). The key is never read from config or env.
+//! Natural-language → filter-tree generation backed by Groq
 
 use crate::api::auth::{babamul_user_from_token, AuthProvider};
 use crate::api::models::response;
@@ -23,8 +16,7 @@ const GROQ_API_URL: &str = "https://api.groq.com/openai/v1/chat/completions";
 const MAX_QUERY_LEN: usize = 2000;
 
 /// Build the system prompt that instructs Groq to emit a block/condition filter
-/// tree. Ported from the frontend `llmFilterAgent.ts` so the prompt (and the
-/// model) are controlled server-side. Returns `None` for surveys that do not yet
+/// tree. Returns `None` for surveys that do not yet
 /// have a natural-language field vocabulary.
 fn build_system_prompt(survey: &Survey) -> Option<String> {
     // Shared output-format contract, identical across surveys.
@@ -236,11 +228,7 @@ pub async fn post_generate_filter(
 
     // Resolve which Groq key to use, all from MongoDB. A logged-in babamul
     // user's own saved key takes precedence; guests (and users without a saved
-    // key) fall back to the shared `__default__` key. `used_default` drives the
-    // rate-limit messaging below.
-    //
-    // The DB/auth providers are pulled from the request extensions, so a route
-    // wired without a Database simply finds no key and prompts the caller.
+    // key) fall back to the shared default key.
     let mut api_key: Option<String> = None;
     let mut used_default = true;
 
@@ -257,8 +245,7 @@ pub async fn post_generate_filter(
         }
     }
 
-    // Fall back to the shared default key stored in Mongo under the reserved
-    // `__default__` id (plaintext or encrypted).
+    // Fall back to the shared default key stored in Mongo
     if api_key.is_none() {
         if let Some(db) = req.app_data::<web::Data<Database>>() {
             if let Some(key) = get_default_groq_key(db).await {
@@ -318,8 +305,6 @@ pub async fn post_generate_filter(
     let raw = groq_response.text().await.unwrap_or_default();
     if !status.is_success() {
         tracing::warn!("Groq API returned {}: {}", status, raw);
-        // Surface auth/quota problems clearly, but do not echo the raw provider
-        // body (it can contain key fragments).
         if status.as_u16() == 429 {
             // Rate limit hit. If the *shared default* key ran out, prompt the
             // caller to supply their own key; if it was the user's own key,
